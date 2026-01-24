@@ -13,6 +13,10 @@ Provides two interfaces:
 - Command-line interface (CLI)
 - Flask web application with drag-and-drop
 
+**Live Demo**: https://web-production-c9323.up.railway.app
+
+**GitHub Repo**: https://github.com/nikmyl/document-converter-
+
 ## Project Structure
 
 ```
@@ -33,6 +37,9 @@ MD to Word/
 │   └── js/script.js      # Client-side JavaScript (handles batch mode)
 ├── start_webapp.bat      # Windows launcher for web app
 ├── start_webapp.sh       # Linux/Mac launcher for web app
+├── Procfile              # Deployment start command
+├── render.yaml           # Render deployment config
+├── .gitignore            # Git ignore rules
 ├── README.md             # Project readme
 ├── DOCUMENTATION.md      # Detailed documentation
 ├── QUICKSTART.md         # Quick start guide
@@ -147,6 +154,7 @@ Input Folder/
 - `reportlab>=4.0.0` - PDF creation (pure Python, no external deps)
 - `pdfplumber>=0.10.0` - PDF table extraction
 - `pypdf>=4.0.0` - PDF text extraction
+- `gunicorn>=21.0.0` - Production WSGI server (for deployment)
 
 ## File Extension Mapping
 
@@ -212,3 +220,33 @@ python converter.py test.docx -o test_roundtrip.md
 - Max file size: 16MB single, 100MB batch
 - PDF converters use lazy loading in app.py for graceful degradation
 - ReportLab chosen over WeasyPrint to avoid GTK+ dependency on Windows
+
+## Deployment
+
+### Live Instance
+- **URL**: https://web-production-c9323.up.railway.app
+- **Platform**: Railway (free tier, $5/month credit)
+- **Auto-deploy**: Pushes to GitHub `main` branch trigger automatic redeployment
+
+### Deployment Files
+- `Procfile` - Tells Railway/Render how to start the app: `gunicorn app:app`
+- `render.yaml` - Render-specific configuration (also works as documentation)
+- `requirements.txt` - Includes `gunicorn` for production WSGI server
+
+### Deploy to Railway (recommended)
+1. Push code to GitHub
+2. Go to https://railway.app
+3. Login with GitHub
+4. Click "Deploy from GitHub repo"
+5. Select the repository
+6. Railway auto-detects Python and deploys
+7. Go to Service Settings → Networking → Generate Domain
+
+### Deploy to Render (alternative)
+1. Push code to GitHub
+2. Go to https://render.com
+3. Create new Web Service
+4. Connect GitHub repo
+5. Set Start Command: `gunicorn app:app`
+6. Select Free tier
+7. Deploy
