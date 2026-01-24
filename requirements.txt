@@ -1,0 +1,12 @@
+# Core dependencies
+python-docx>=0.8.11
+markdown>=3.4.0
+Flask>=2.3.0
+
+# PDF support
+reportlab>=4.0.0
+pdfplumber>=0.10.0
+pypdf>=4.0.0
+
+# Production server (for Render deployment)
+gunicorn>=21.0.0
