@@ -32,6 +32,16 @@ let selectedFile = null;
 let selectedFiles = [];
 let selectedTargetFormat = null;
 let isBatchMode = false;
+let currentAbortController = null;
+
+// Configuration
+const CONFIG = {
+    MAX_SINGLE_FILE_SIZE: 16 * 1024 * 1024,  // 16MB
+    MAX_BATCH_SIZE: 100 * 1024 * 1024,        // 100MB
+    REQUEST_TIMEOUT: 300000,                   // 5 minutes
+    RETRY_ATTEMPTS: 2,
+    RETRY_DELAY: 1000                          // 1 second
+};
 
 // File extension sets
 const markdownExtensions = ['md', 'markdown', 'txt'];
@@ -50,13 +60,17 @@ function setMode(batch) {
     singleModeBtn.classList.toggle('active', !batch);
     batchModeBtn.classList.toggle('active', batch);
 
+    // Update aria-pressed states
+    singleModeBtn.setAttribute('aria-pressed', !batch);
+    batchModeBtn.setAttribute('aria-pressed', batch);
+
     // Update drop zone text
     if (batch) {
         dropZoneTitle.textContent = 'Drag & Drop files or a .zip here';
-        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf, .zip (max 100MB)';
+        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf, .zip (max 100MB total)';
     } else {
         dropZoneTitle.textContent = 'Drag & Drop your file here';
-        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf';
+        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf (max 16MB)';
     }
 
     // Reset the form when switching modes
@@ -348,15 +362,89 @@ function formatFileSize(bytes) {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
 
+// Cancel any ongoing conversion
+function cancelConversion() {
+    if (currentAbortController) {
+        currentAbortController.abort();
+        currentAbortController = null;
+    }
+}
+
+// Fetch with timeout and retry support
+async function fetchWithTimeout(url, options, timeout = CONFIG.REQUEST_TIMEOUT) {
+    const controller = new AbortController();
+    currentAbortController = controller;
+
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw new Error('Request timed out or was cancelled. Please try again.');
+        }
+        throw error;
+    } finally {
+        currentAbortController = null;
+    }
+}
+
+// Retry wrapper for fetch operations
+async function fetchWithRetry(url, options, retries = CONFIG.RETRY_ATTEMPTS) {
+    let lastError;
+
+    for (let i = 0; i <= retries; i++) {
+        try {
+            return await fetchWithTimeout(url, options);
+        } catch (error) {
+            lastError = error;
+
+            // Don't retry on user cancellation or certain errors
+            if (error.message.includes('cancelled') ||
+                error.message.includes('Invalid file') ||
+                error.message.includes('too large')) {
+                throw error;
+            }
+
+            // Wait before retry (exponential backoff)
+            if (i < retries) {
+                await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY * (i + 1)));
+                updateProgressText(`Retrying... (attempt ${i + 2}/${retries + 1})`);
+            }
+        }
+    }
+
+    throw lastError;
+}
+
+// Update progress text with aria-live announcement
+function updateProgressText(text) {
+    progressText.textContent = text;
+    // Announce to screen readers
+    progressText.setAttribute('aria-live', 'polite');
+}
+
 // Convert file with specific target format
 async function convertFileWithFormat(targetFormat) {
     if (!selectedFile) return;
+
+    // Client-side file size validation
+    if (selectedFile.size > CONFIG.MAX_SINGLE_FILE_SIZE) {
+        showError(`File too large. Maximum size is ${formatFileSize(CONFIG.MAX_SINGLE_FILE_SIZE)}.`);
+        return;
+    }
 
     selectedTargetFormat = targetFormat;
 
     // Hide file info and show progress
     fileInfoContainer.classList.add('hidden');
-    progressText.textContent = `Converting to ${targetFormat.toUpperCase()}...`;
+    updateProgressText(`Converting to ${targetFormat.toUpperCase()}...`);
     progressContainer.classList.remove('hidden');
 
     const formData = new FormData();
@@ -364,14 +452,21 @@ async function convertFileWithFormat(targetFormat) {
 
     try {
         // Add format query parameter
-        const response = await fetch(`/convert?format=${targetFormat}`, {
+        const response = await fetchWithRetry(`/convert?format=${targetFormat}`, {
             method: 'POST',
             body: formData
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Conversion failed');
+            let errorMessage = 'Conversion failed';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (jsonError) {
+                // Response wasn't JSON, use status text
+                errorMessage = response.statusText || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
 
         // Download the file
@@ -394,9 +489,24 @@ batchConvertButton.addEventListener('click', convertBatch);
 async function convertBatch() {
     if (selectedFiles.length === 0) return;
 
+    // Client-side total size validation
+    const totalSize = selectedFiles.reduce((sum, f) => sum + f.size, 0);
+    if (totalSize > CONFIG.MAX_BATCH_SIZE) {
+        showError(`Total file size too large. Maximum is ${formatFileSize(CONFIG.MAX_BATCH_SIZE)}.`);
+        return;
+    }
+
+    // Validate individual file sizes
+    for (const file of selectedFiles) {
+        if (file.size > CONFIG.MAX_SINGLE_FILE_SIZE && !isZipFile(file.name)) {
+            showError(`File "${file.name}" is too large. Maximum is ${formatFileSize(CONFIG.MAX_SINGLE_FILE_SIZE)} per file.`);
+            return;
+        }
+    }
+
     // Hide batch info and show progress
     batchFileInfo.classList.add('hidden');
-    progressText.textContent = `Converting ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}...`;
+    updateProgressText(`Converting ${selectedFiles.length} file${selectedFiles.length > 1 ? 's' : ''}...`);
     progressContainer.classList.remove('hidden');
 
     const formData = new FormData();
@@ -412,14 +522,21 @@ async function convertBatch() {
     }
 
     try {
-        const response = await fetch('/convert-batch', {
+        const response = await fetchWithRetry('/convert-batch', {
             method: 'POST',
             body: formData
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Batch conversion failed');
+            let errorMessage = 'Batch conversion failed';
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData.error || errorMessage;
+            } catch (jsonError) {
+                // Response wasn't JSON, use status text
+                errorMessage = response.statusText || errorMessage;
+            }
+            throw new Error(errorMessage);
         }
 
         // Download the response
@@ -480,11 +597,35 @@ function showError(message) {
 
 // Reset the form
 function resetForm() {
+    // Cancel any ongoing conversion
+    cancelConversion();
+
     selectedFile = null;
     selectedFiles = [];
     selectedTargetFormat = null;
-    fileInput.value = '';
-    fileInputMultiple.value = '';
+
+    // Reset file inputs properly (create new elements to ensure change event fires)
+    const newFileInput = fileInput.cloneNode(true);
+    const newFileInputMultiple = fileInputMultiple.cloneNode(true);
+
+    fileInput.parentNode.replaceChild(newFileInput, fileInput);
+    fileInputMultiple.parentNode.replaceChild(newFileInputMultiple, fileInputMultiple);
+
+    // Update references and re-attach event listeners
+    const updatedFileInput = document.getElementById('file-input');
+    const updatedFileInputMultiple = document.getElementById('file-input-multiple');
+
+    updatedFileInput.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            handleFile(this.files[0]);
+        }
+    });
+
+    updatedFileInputMultiple.addEventListener('change', function() {
+        if (this.files.length > 0) {
+            handleMultipleFiles(Array.from(this.files));
+        }
+    });
 
     // Clear convert buttons
     if (convertButtonsContainer) {
@@ -505,3 +646,31 @@ function resetForm() {
 // Reset button handlers
 resetButton.addEventListener('click', resetForm);
 errorResetButton.addEventListener('click', resetForm);
+
+// Cancel button handler
+const cancelButton = document.getElementById('cancel-button');
+if (cancelButton) {
+    cancelButton.addEventListener('click', function() {
+        cancelConversion();
+        progressContainer.classList.add('hidden');
+        showError('Conversion cancelled.');
+    });
+}
+
+// Keyboard navigation for drop zone
+dropZone.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (isBatchMode) {
+            document.getElementById('file-input-multiple').click();
+        } else {
+            document.getElementById('file-input').click();
+        }
+    }
+});
+
+// Update aria-pressed on mode toggle
+function updateModeAriaStates() {
+    singleModeBtn.setAttribute('aria-pressed', !isBatchMode);
+    batchModeBtn.setAttribute('aria-pressed', isBatchMode);
+}

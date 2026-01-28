@@ -257,17 +257,32 @@ class DocxToMarkdownConverter:
         return text
 
     def _is_code_block(self, paragraph: Paragraph) -> bool:
-        """Check if paragraph is a code block"""
+        """
+        Check if paragraph is a code block
+
+        Only treat as code block if:
+        1. Style explicitly indicates code (e.g., 'CodeBlock', 'Code')
+        2. ALL runs have monospace font AND it's a multi-line or indented block
+
+        This prevents regular monospace text from being treated as code blocks.
+        """
         style_name = paragraph.style.name if paragraph.style else ''
 
-        # Check for CodeBlock style
+        # Check for explicit CodeBlock style
         if 'code' in style_name.lower():
             return True
 
-        # Check if all runs have monospace font
-        if paragraph.runs:
-            for run in paragraph.runs:
-                if run.font.name and 'courier' in run.font.name.lower():
+        # Check paragraph formatting that suggests code block
+        # (e.g., left indent, specific style)
+        if paragraph.paragraph_format.left_indent and paragraph.paragraph_format.left_indent.inches >= 0.3:
+            # Has significant left indent - could be code block
+            # Check if ALL runs have monospace font
+            if paragraph.runs:
+                all_monospace = all(
+                    run.font.name and 'courier' in run.font.name.lower()
+                    for run in paragraph.runs if run.text.strip()
+                )
+                if all_monospace:
                     return True
 
         return False

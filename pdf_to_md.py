@@ -221,10 +221,12 @@ class PdfToMarkdownConverter:
                 self.markdown_lines.append(f"- {bullet_match.group(1)}")
                 continue
 
-            # Check for numbered list
+            # Check for numbered list (support 10+ item lists)
             numbered_match = re.match(r'^(\d+)[.)\]]\s*(.+)$', line)
             if numbered_match:
-                self.markdown_lines.append(f"{numbered_match.group(1)}. {numbered_match.group(2)}")
+                num = numbered_match.group(1)
+                text = numbered_match.group(2)
+                self.markdown_lines.append(f"{num}. {text}")
                 continue
 
             # Check for horizontal rule
@@ -286,33 +288,87 @@ class PdfToMarkdownConverter:
         return italic_count > len(chars) / 2
 
     def _detect_heading_level(self, font_size: float, is_bold: bool) -> Optional[int]:
-        """Determine heading level from font characteristics"""
+        """
+        Determine heading level from font characteristics
+
+        Uses adaptive thresholds based on the document's font size distribution
+        rather than fixed magic numbers.
+        """
         if not self._font_sizes or font_size <= self._base_font_size:
             return None
 
         # Calculate size ratio
         ratio = font_size / self._base_font_size
 
-        # Map ratio to heading level
-        if ratio >= 2.0:
+        # Get the range of font sizes in the document
+        max_font_size = max(self._font_sizes) if self._font_sizes else self._base_font_size
+        font_range = max_font_size - self._base_font_size
+
+        if font_range <= 0:
+            return None
+
+        # Calculate relative position in the font size range
+        relative_size = (font_size - self._base_font_size) / font_range
+
+        # Map relative position to heading levels
+        # This adapts to documents with different font size distributions
+        if relative_size >= 0.85:  # Top 15% of font range
             return 1
-        elif ratio >= 1.7:
+        elif relative_size >= 0.65:  # 65-85%
             return 2
-        elif ratio >= 1.4:
+        elif relative_size >= 0.45:  # 45-65%
             return 3
-        elif ratio >= 1.2 and is_bold:
-            return 4
-        elif ratio >= 1.1 and is_bold:
-            return 5
-        elif is_bold and font_size > self._base_font_size:
+        elif relative_size >= 0.25:  # 25-45%
+            return 4 if is_bold else None
+        elif relative_size >= 0.10:  # 10-25%
+            return 5 if is_bold else None
+        elif is_bold and ratio > 1.05:  # Small but bold and larger than base
             return 6
+
+        # Fallback to ratio-based detection for edge cases
+        if ratio >= 1.8:
+            return 1
+        elif ratio >= 1.5:
+            return 2
+        elif ratio >= 1.3:
+            return 3
+        elif ratio >= 1.15 and is_bold:
+            return 4
 
         return None
 
     def _apply_inline_formatting(self, line: str, chars: List[Dict]) -> str:
         """Apply inline markdown formatting based on character properties"""
-        # For now, return the line as-is
-        # More sophisticated implementation would track bold/italic spans
+        if not chars or not line:
+            return line
+
+        # Group characters by their formatting
+        # This is a simplified approach - we check if majority of chars are bold/italic
+        bold_count = 0
+        italic_count = 0
+
+        for char in chars:
+            fontname = char.get('fontname', '').lower()
+            if 'bold' in fontname or 'heavy' in fontname or 'black' in fontname:
+                bold_count += 1
+            if 'italic' in fontname or 'oblique' in fontname:
+                italic_count += 1
+
+        total_chars = len(chars)
+        if total_chars == 0:
+            return line
+
+        # Apply formatting if majority of characters have that style
+        is_mostly_bold = bold_count > total_chars * 0.7
+        is_mostly_italic = italic_count > total_chars * 0.7
+
+        if is_mostly_bold and is_mostly_italic:
+            return f"***{line}***"
+        elif is_mostly_bold:
+            return f"**{line}**"
+        elif is_mostly_italic:
+            return f"*{line}*"
+
         return line
 
     def _add_table(self, table_data: List[List[Any]]):

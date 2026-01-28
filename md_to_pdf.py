@@ -271,6 +271,7 @@ class MarkdownToPdfConverter:
             ordered_match = re.match(r'^(\d+)\.\s+(.+)$', line)
             if ordered_match:
                 items = []
+                start_num = int(ordered_match.group(1))  # Preserve starting number
                 while i < len(lines):
                     om = re.match(r'^(\d+)\.\s+(.+)$', lines[i])
                     if om:
@@ -280,7 +281,7 @@ class MarkdownToPdfConverter:
                     else:
                         break
                 if items:
-                    story.append(ListFlowable(items, bulletType='1', start=1))
+                    story.append(ListFlowable(items, bulletType='1', start=start_num))
                     story.append(Spacer(1, 8))
                 continue
 
