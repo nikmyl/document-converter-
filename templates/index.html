@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Convert documents between Markdown, Word (DOCX), and PDF formats instantly">
+    <meta name="description" content="Convert documents between Markdown, Word (DOCX), PDF, and LaTeX formats instantly">
     <meta name="theme-color" content="#667eea">
-    <title>Document Converter - MD, DOCX & PDF</title>
+    <title>Document Converter - MD, DOCX, PDF & LaTeX</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
@@ -18,11 +18,13 @@
     <div class="container">
         <header>
             <h1>Document Converter</h1>
-            <p class="subtitle">Convert between Markdown, Word, and PDF instantly</p>
+            <p class="subtitle">Convert between Markdown, Word, PDF, and LaTeX instantly</p>
             <div class="conversion-badges">
                 <span class="badge">.md ⇄ .docx</span>
                 <span class="badge-separator">|</span>
                 <span class="badge">.md ⇄ .pdf</span>
+                <span class="badge-separator">|</span>
+                <span class="badge">.md ⇄ .tex</span>
                 <span class="badge-separator">|</span>
                 <span class="badge">.docx ⇄ .pdf</span>
             </div>
@@ -49,9 +51,9 @@
                     <label for="file-input" class="file-label">
                         <span class="browse-button" role="button" tabindex="0">Browse Files</span>
                     </label>
-                    <input type="file" id="file-input" accept=".md,.markdown,.txt,.docx,.pdf" hidden aria-label="Select a file to convert">
-                    <input type="file" id="file-input-multiple" accept=".md,.markdown,.txt,.docx,.pdf,.zip" multiple hidden aria-label="Select multiple files to convert">
-                    <p class="file-info" id="supported-formats">Supported: .md, .markdown, .txt, .docx, .pdf (max 16MB)</p>
+                    <input type="file" id="file-input" accept=".md,.markdown,.txt,.docx,.pdf,.tex,.latex" hidden aria-label="Select a file to convert">
+                    <input type="file" id="file-input-multiple" accept=".md,.markdown,.txt,.docx,.pdf,.tex,.latex,.zip" multiple hidden aria-label="Select multiple files to convert">
+                    <p class="file-info" id="supported-formats">Supported: .md, .markdown, .txt, .docx, .pdf, .tex (max 16MB)</p>
                 </div>
             </div>
 
@@ -100,8 +102,12 @@
                         <span class="stat-label">PDF:</span>
                         <span id="pdf-count" class="stat-value">0</span>
                     </div>
+                    <div class="stat">
+                        <span class="stat-label">LaTeX:</span>
+                        <span id="tex-count" class="stat-value">0</span>
+                    </div>
                 </div>
-                <p class="batch-note">Output will be organized in MD/, DOCX/, and PDF/ folders</p>
+                <p class="batch-note">Output will be organized in MD/, DOCX/, PDF/, and TEX/ folders</p>
                 <button id="batch-convert-button" class="convert-button">Convert All</button>
             </div>
 
@@ -136,8 +142,8 @@
                     <svg class="feature-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                     </svg>
-                    <h3>3 Formats</h3>
-                    <p>MD, DOCX & PDF</p>
+                    <h3>4 Formats</h3>
+                    <p>MD, DOCX, PDF & TEX</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">

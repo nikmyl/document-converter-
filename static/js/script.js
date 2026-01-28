@@ -26,6 +26,7 @@ const batchCount = document.getElementById('batch-count');
 const mdCount = document.getElementById('md-count');
 const docxCount = document.getElementById('docx-count');
 const pdfCount = document.getElementById('pdf-count');
+const texCount = document.getElementById('tex-count');
 
 // State
 let selectedFile = null;
@@ -47,6 +48,7 @@ const CONFIG = {
 const markdownExtensions = ['md', 'markdown', 'txt'];
 const docxExtensions = ['docx'];
 const pdfExtensions = ['pdf'];
+const texExtensions = ['tex', 'latex'];
 const zipExtensions = ['zip'];
 
 // Mode toggle handlers
@@ -67,10 +69,10 @@ function setMode(batch) {
     // Update drop zone text
     if (batch) {
         dropZoneTitle.textContent = 'Drag & Drop files or a .zip here';
-        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf, .zip (max 100MB total)';
+        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf, .tex, .zip (max 100MB total)';
     } else {
         dropZoneTitle.textContent = 'Drag & Drop your file here';
-        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf (max 16MB)';
+        supportedFormats.textContent = 'Supported: .md, .markdown, .txt, .docx, .pdf, .tex (max 16MB)';
     }
 
     // Reset the form when switching modes
@@ -172,6 +174,11 @@ function isPdfFile(filename) {
     return pdfExtensions.includes(getFileExtension(filename));
 }
 
+// Check if file is LaTeX
+function isTexFile(filename) {
+    return texExtensions.includes(getFileExtension(filename));
+}
+
 // Check if file is zip
 function isZipFile(filename) {
     return zipExtensions.includes(getFileExtension(filename));
@@ -179,7 +186,7 @@ function isZipFile(filename) {
 
 // Check if file is convertible
 function isConvertibleFile(filename) {
-    return isMarkdownFile(filename) || isDocxFile(filename) || isPdfFile(filename);
+    return isMarkdownFile(filename) || isDocxFile(filename) || isPdfFile(filename) || isTexFile(filename);
 }
 
 // Get target formats for a given source file type
@@ -187,14 +194,22 @@ function getTargetFormats(filename) {
     if (isMarkdownFile(filename)) {
         return [
             { format: 'docx', label: 'Convert to DOCX', icon: '📄' },
-            { format: 'pdf', label: 'Convert to PDF', icon: '📕' }
+            { format: 'pdf', label: 'Convert to PDF', icon: '📕' },
+            { format: 'tex', label: 'Convert to LaTeX', icon: '📐' }
         ];
     } else if (isDocxFile(filename)) {
         return [
             { format: 'md', label: 'Convert to MD', icon: '📝' },
-            { format: 'pdf', label: 'Convert to PDF', icon: '📕' }
+            { format: 'pdf', label: 'Convert to PDF', icon: '📕' },
+            { format: 'tex', label: 'Convert to LaTeX', icon: '📐' }
         ];
     } else if (isPdfFile(filename)) {
+        return [
+            { format: 'md', label: 'Convert to MD', icon: '📝' },
+            { format: 'docx', label: 'Convert to DOCX', icon: '📄' },
+            { format: 'tex', label: 'Convert to LaTeX', icon: '📐' }
+        ];
+    } else if (isTexFile(filename)) {
         return [
             { format: 'md', label: 'Convert to MD', icon: '📝' },
             { format: 'docx', label: 'Convert to DOCX', icon: '📄' }
@@ -206,10 +221,10 @@ function getTargetFormats(filename) {
 // Handle single file selection
 function handleFile(file) {
     const fileExtension = getFileExtension(file.name);
-    const allValidExtensions = [...markdownExtensions, ...docxExtensions, ...pdfExtensions];
+    const allValidExtensions = [...markdownExtensions, ...docxExtensions, ...pdfExtensions, ...texExtensions];
 
     if (!allValidExtensions.includes(fileExtension)) {
-        showError('Invalid file type. Please select a .md, .markdown, .txt, .docx, or .pdf file.');
+        showError('Invalid file type. Please select a .md, .markdown, .txt, .docx, .pdf, or .tex file.');
         return;
     }
 
@@ -262,6 +277,7 @@ function handleMultipleFiles(files) {
     let mdFileCount = 0;
     let docxFileCount = 0;
     let pdfFileCount = 0;
+    let texFileCount = 0;
 
     files.forEach(file => {
         if (isZipFile(file.name)) {
@@ -274,6 +290,8 @@ function handleMultipleFiles(files) {
                 docxFileCount++;
             } else if (isPdfFile(file.name)) {
                 pdfFileCount++;
+            } else if (isTexFile(file.name)) {
+                texFileCount++;
             }
         } else {
             skippedFiles.push(file.name);
@@ -288,12 +306,13 @@ function handleMultipleFiles(files) {
         mdCount.textContent = '?';
         docxCount.textContent = '?';
         if (pdfCount) pdfCount.textContent = '?';
+        if (texCount) texCount.textContent = '?';
 
         // Clear and hide file list for zip
         batchFileList.innerHTML = '<p class="zip-note">ZIP contents will be extracted and converted</p>';
 
     } else if (convertibleFiles.length === 0 && zipFiles.length === 0) {
-        showError('No convertible files found. Please select .md, .markdown, .txt, .docx, .pdf, or .zip files.');
+        showError('No convertible files found. Please select .md, .markdown, .txt, .docx, .pdf, .tex, or .zip files.');
         return;
     } else {
         selectedFiles = [...convertibleFiles, ...zipFiles];
@@ -304,6 +323,7 @@ function handleMultipleFiles(files) {
         mdCount.textContent = mdFileCount.toString();
         docxCount.textContent = docxFileCount.toString();
         if (pdfCount) pdfCount.textContent = pdfFileCount.toString();
+        if (texCount) texCount.textContent = texFileCount.toString();
 
         // Populate file list (show first 10)
         batchFileList.innerHTML = '';
@@ -324,6 +344,9 @@ function handleMultipleFiles(files) {
                 direction = '→ .md';
             } else if (isPdfFile(file.name)) {
                 icon = '📕';
+                direction = '→ .md';
+            } else if (isTexFile(file.name)) {
+                icon = '📐';
                 direction = '→ .md';
             } else {
                 icon = '📋';

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Flask Web Application for Document Converter
-Converts between Markdown (.md), Word documents (.docx), and PDF files
+Converts between Markdown (.md), Word documents (.docx), PDF files, and LaTeX (.tex)
 Provides a web interface with drag-and-drop functionality
 Supports batch conversion with multiple files or zip upload
 """
@@ -42,6 +42,13 @@ PdfToMarkdownConverter = None
 DocxToPdfConverter = None
 PdfToDocxConverter = None
 
+# LaTeX converters - imported lazily
+MarkdownToTexConverter = None
+TexToMarkdownConverter = None
+DocxToTexConverter = None
+TexToDocxConverter = None
+PdfToTexConverter = None
+
 def _load_pdf_converters():
     """Load PDF converters lazily"""
     global MarkdownToPdfConverter, PdfToMarkdownConverter, DocxToPdfConverter, PdfToDocxConverter
@@ -63,6 +70,28 @@ def _load_pdf_converters():
             return False
     return True
 
+
+def _load_tex_converters():
+    """Load LaTeX converters lazily"""
+    global MarkdownToTexConverter, TexToMarkdownConverter, DocxToTexConverter, TexToDocxConverter, PdfToTexConverter
+    if MarkdownToTexConverter is None:
+        try:
+            from md_to_tex import MarkdownToTexConverter as _MdToTex
+            from tex_to_md import TexToMarkdownConverter as _TexToMd
+            from docx_to_tex import DocxToTexConverter as _DocxToTex
+            from tex_to_docx import TexToDocxConverter as _TexToDocx
+            from pdf_to_tex import PdfToTexConverter as _PdfToTex
+            MarkdownToTexConverter = _MdToTex
+            TexToMarkdownConverter = _TexToMd
+            DocxToTexConverter = _DocxToTex
+            TexToDocxConverter = _TexToDocx
+            PdfToTexConverter = _PdfToTex
+            return True
+        except Exception as e:
+            print(f"Warning: LaTeX converters not available: {e}")
+            return False
+    return True
+
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max for batch uploads
 app.config['UPLOAD_FOLDER'] = tempfile.gettempdir()
@@ -75,8 +104,9 @@ app.config['MAX_ZIP_RATIO'] = 100  # Max decompression ratio (ZIP bomb protectio
 MARKDOWN_EXTENSIONS = {'md', 'markdown', 'txt'}
 DOCX_EXTENSIONS = {'docx'}
 PDF_EXTENSIONS = {'pdf'}
+TEX_EXTENSIONS = {'tex', 'latex'}
 ZIP_EXTENSIONS = {'zip'}
-ALLOWED_EXTENSIONS = MARKDOWN_EXTENSIONS | DOCX_EXTENSIONS | PDF_EXTENSIONS | ZIP_EXTENSIONS
+ALLOWED_EXTENSIONS = MARKDOWN_EXTENSIONS | DOCX_EXTENSIONS | PDF_EXTENSIONS | TEX_EXTENSIONS | ZIP_EXTENSIONS
 
 
 def cleanup_temp_dirs():
@@ -260,7 +290,7 @@ def allowed_file(filename):
 def is_convertible_file(filename):
     """Check if the file can be converted (not a zip)"""
     ext = get_file_extension(filename)
-    return ext in MARKDOWN_EXTENSIONS or ext in DOCX_EXTENSIONS or ext in PDF_EXTENSIONS
+    return ext in MARKDOWN_EXTENSIONS or ext in DOCX_EXTENSIONS or ext in PDF_EXTENSIONS or ext in TEX_EXTENSIONS
 
 
 def get_file_extension(filename):
@@ -283,6 +313,11 @@ def is_pdf_file(filename):
     return get_file_extension(filename) in PDF_EXTENSIONS
 
 
+def is_tex_file(filename):
+    """Check if the file is a LaTeX document"""
+    return get_file_extension(filename) in TEX_EXTENSIONS
+
+
 def is_zip_file(filename):
     """Check if the file is a zip archive"""
     return get_file_extension(filename) in ZIP_EXTENSIONS
@@ -296,7 +331,7 @@ def get_converter_and_output(input_path, filename, output_dir, target_format=Non
         input_path: Path to input file
         filename: Original filename
         output_dir: Base output directory
-        target_format: Target format ('pdf', 'docx', 'md') or None for default
+        target_format: Target format ('pdf', 'docx', 'md', 'tex') or None for default
 
     Returns:
         Tuple of (converter, output_path, direction) or raises ValueError
@@ -310,6 +345,14 @@ def get_converter_and_output(input_path, filename, output_dir, target_format=Non
             output_filename = Path(filename).stem + '.pdf'
             output_path = os.path.join(output_subdir, output_filename)
             return MarkdownToPdfConverter(input_path, output_path), output_path, 'md_to_pdf'
+        elif target_format == 'tex':
+            if not _load_tex_converters():
+                raise ValueError('LaTeX conversion not available.')
+            output_subdir = os.path.join(output_dir, 'TEX')
+            os.makedirs(output_subdir, exist_ok=True)
+            output_filename = Path(filename).stem + '.tex'
+            output_path = os.path.join(output_subdir, output_filename)
+            return MarkdownToTexConverter(input_path, output_path), output_path, 'md_to_tex'
         else:
             output_subdir = os.path.join(output_dir, 'DOCX')
             os.makedirs(output_subdir, exist_ok=True)
@@ -326,6 +369,14 @@ def get_converter_and_output(input_path, filename, output_dir, target_format=Non
             output_filename = Path(filename).stem + '.pdf'
             output_path = os.path.join(output_subdir, output_filename)
             return DocxToPdfConverter(input_path, output_path), output_path, 'docx_to_pdf'
+        elif target_format == 'tex':
+            if not _load_tex_converters():
+                raise ValueError('LaTeX conversion not available.')
+            output_subdir = os.path.join(output_dir, 'TEX')
+            os.makedirs(output_subdir, exist_ok=True)
+            output_filename = Path(filename).stem + '.tex'
+            output_path = os.path.join(output_subdir, output_filename)
+            return DocxToTexConverter(input_path, output_path), output_path, 'docx_to_tex'
         else:
             output_subdir = os.path.join(output_dir, 'MD')
             os.makedirs(output_subdir, exist_ok=True)
@@ -342,12 +393,37 @@ def get_converter_and_output(input_path, filename, output_dir, target_format=Non
             output_filename = Path(filename).stem + '.docx'
             output_path = os.path.join(output_subdir, output_filename)
             return PdfToDocxConverter(input_path, output_path), output_path, 'pdf_to_docx'
+        elif target_format == 'tex':
+            if not _load_tex_converters():
+                raise ValueError('LaTeX conversion not available.')
+            output_subdir = os.path.join(output_dir, 'TEX')
+            os.makedirs(output_subdir, exist_ok=True)
+            output_filename = Path(filename).stem + '.tex'
+            output_path = os.path.join(output_subdir, output_filename)
+            return PdfToTexConverter(input_path, output_path), output_path, 'pdf_to_tex'
         else:
             output_subdir = os.path.join(output_dir, 'MD')
             os.makedirs(output_subdir, exist_ok=True)
             output_filename = Path(filename).stem + '.md'
             output_path = os.path.join(output_subdir, output_filename)
             return PdfToMarkdownConverter(input_path, output_path), output_path, 'pdf_to_md'
+
+    elif is_tex_file(filename):
+        if not _load_tex_converters():
+            raise ValueError('LaTeX conversion not available.')
+        if target_format == 'docx':
+            output_subdir = os.path.join(output_dir, 'DOCX')
+            os.makedirs(output_subdir, exist_ok=True)
+            output_filename = Path(filename).stem + '.docx'
+            output_path = os.path.join(output_subdir, output_filename)
+            return TexToDocxConverter(input_path, output_path), output_path, 'tex_to_docx'
+        else:
+            # Default: TEX to MD
+            output_subdir = os.path.join(output_dir, 'MD')
+            os.makedirs(output_subdir, exist_ok=True)
+            output_filename = Path(filename).stem + '.md'
+            output_path = os.path.join(output_subdir, output_filename)
+            return TexToMarkdownConverter(input_path, output_path), output_path, 'tex_to_md'
 
     else:
         raise ValueError(f'Unsupported file type: {filename}')
@@ -358,10 +434,15 @@ def get_mimetype_for_direction(direction):
     mimetypes = {
         'md_to_docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'md_to_pdf': 'application/pdf',
+        'md_to_tex': 'application/x-tex',
         'docx_to_md': 'text/markdown',
         'docx_to_pdf': 'application/pdf',
+        'docx_to_tex': 'application/x-tex',
         'pdf_to_md': 'text/markdown',
         'pdf_to_docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'pdf_to_tex': 'application/x-tex',
+        'tex_to_md': 'text/markdown',
+        'tex_to_docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     }
     return mimetypes.get(direction, 'application/octet-stream')
 
@@ -446,7 +527,7 @@ def convert_file():
 
         # Validate file extension
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Please upload a .md, .markdown, .txt, .docx, or .pdf file'}), 400
+            return jsonify({'error': 'Invalid file type. Please upload a .md, .markdown, .txt, .docx, .pdf, or .tex file'}), 400
 
         # Check file size (single file limit)
         file.seek(0, 2)  # Seek to end
@@ -710,10 +791,12 @@ def convert_batch():
             direction = converted['direction']
 
             # Determine output folder based on direction
-            if direction in ('md_to_docx', 'pdf_to_docx'):
+            if direction in ('md_to_docx', 'pdf_to_docx', 'tex_to_docx'):
                 output_folder = 'DOCX'
             elif direction in ('md_to_pdf', 'docx_to_pdf'):
                 output_folder = 'PDF'
+            elif direction in ('md_to_tex', 'docx_to_tex', 'pdf_to_tex'):
+                output_folder = 'TEX'
             else:
                 output_folder = 'MD'
 
@@ -771,18 +854,19 @@ def too_large(e):
 if __name__ == '__main__':
     print("=" * 60)
     print("Document Converter - Web Interface")
-    print("Supports: Markdown <-> Word (DOCX) <-> PDF")
+    print("Supports: Markdown <-> Word (DOCX) <-> PDF <-> LaTeX (TEX)")
     print("=" * 60)
     print("\nStarting server...")
     print("Access the application at: http://localhost:5000")
     print("\nSupported conversions:")
-    print("  .md, .markdown, .txt  ->  .docx or .pdf")
-    print("  .docx                 ->  .md or .pdf")
-    print("  .pdf                  ->  .md or .docx")
+    print("  .md, .markdown, .txt  ->  .docx, .pdf, or .tex")
+    print("  .docx                 ->  .md, .pdf, or .tex")
+    print("  .pdf                  ->  .md, .docx, or .tex")
+    print("  .tex, .latex          ->  .md or .docx")
     print("\nBatch conversion:")
     print("  - Upload multiple files at once")
     print("  - Upload a .zip file containing documents")
-    print("  - Output organized in MD/, DOCX/, and PDF/ folders")
+    print("  - Output organized in MD/, DOCX/, PDF/, and TEX/ folders")
     print("\nPress CTRL+C to stop the server")
     print("=" * 60)
 

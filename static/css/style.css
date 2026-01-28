@@ -413,6 +413,15 @@ main {
     box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
 }
 
+.convert-button.convert-to-tex {
+    background: #7c3aed;
+}
+
+.convert-button.convert-to-tex:hover {
+    background: #6d28d9;
+    box-shadow: 0 4px 12px rgba(124, 58, 237, 0.4);
+}
+
 /* Batch convert button (full width) */
 #batch-convert-button {
     width: 100%;
@@ -611,6 +620,10 @@ footer {
 
 .convert-button.convert-to-md::before {
     content: "MD ";
+}
+
+.convert-button.convert-to-tex::before {
+    content: "TEX ";
 }
 
 /* Utility classes */

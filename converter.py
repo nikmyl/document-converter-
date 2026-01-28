@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Bidirectional Document Converter
-Converts between Markdown (.md), Word documents (.docx), and PDF files
+Converts between Markdown (.md), Word documents (.docx), PDF files, and LaTeX (.tex)
 Auto-detects conversion direction based on file extension
 Supports folder batch conversion with organized output
 """
@@ -18,14 +18,20 @@ from md_to_pdf import MarkdownToPdfConverter
 from pdf_to_md import PdfToMarkdownConverter
 from docx_to_pdf import DocxToPdfConverter
 from pdf_to_docx import PdfToDocxConverter
+from md_to_tex import MarkdownToTexConverter
+from tex_to_md import TexToMarkdownConverter
+from docx_to_tex import DocxToTexConverter
+from tex_to_docx import TexToDocxConverter
+from pdf_to_tex import PdfToTexConverter
 
 # Supported extensions
 MARKDOWN_EXTENSIONS = {'.md', '.markdown', '.txt'}
 MARKDOWN_EXTENSIONS_FOLDER = {'.md', '.markdown'}  # Exclude .txt from folder scan (too generic)
 DOCX_EXTENSIONS = {'.docx'}
 PDF_EXTENSIONS = {'.pdf'}
-ALL_EXTENSIONS = MARKDOWN_EXTENSIONS | DOCX_EXTENSIONS | PDF_EXTENSIONS
-ALL_EXTENSIONS_FOLDER = MARKDOWN_EXTENSIONS_FOLDER | DOCX_EXTENSIONS | PDF_EXTENSIONS
+TEX_EXTENSIONS = {'.tex', '.latex'}
+ALL_EXTENSIONS = MARKDOWN_EXTENSIONS | DOCX_EXTENSIONS | PDF_EXTENSIONS | TEX_EXTENSIONS
+ALL_EXTENSIONS_FOLDER = MARKDOWN_EXTENSIONS_FOLDER | DOCX_EXTENSIONS | PDF_EXTENSIONS | TEX_EXTENSIONS
 
 
 def get_conversion_direction(input_file: str, target_format: Optional[str] = None) -> str:
@@ -34,28 +40,39 @@ def get_conversion_direction(input_file: str, target_format: Optional[str] = Non
 
     Args:
         input_file: Path to input file
-        target_format: Target format ('pdf', 'docx', 'md') or None for default
+        target_format: Target format ('pdf', 'docx', 'md', 'tex') or None for default
 
     Returns:
-        One of: 'md_to_docx', 'md_to_pdf', 'docx_to_md', 'docx_to_pdf',
-                'pdf_to_md', 'pdf_to_docx'
+        One of: 'md_to_docx', 'md_to_pdf', 'md_to_tex', 'docx_to_md', 'docx_to_pdf',
+                'docx_to_tex', 'pdf_to_md', 'pdf_to_docx', 'pdf_to_tex',
+                'tex_to_md', 'tex_to_docx'
     """
     suffix = Path(input_file).suffix.lower()
 
     if suffix in MARKDOWN_EXTENSIONS:
         if target_format == 'pdf':
             return 'md_to_pdf'
+        elif target_format == 'tex':
+            return 'md_to_tex'
         return 'md_to_docx'  # Default
     elif suffix in DOCX_EXTENSIONS:
         if target_format == 'pdf':
             return 'docx_to_pdf'
+        elif target_format == 'tex':
+            return 'docx_to_tex'
         return 'docx_to_md'  # Default
     elif suffix in PDF_EXTENSIONS:
         if target_format == 'docx':
             return 'pdf_to_docx'
+        elif target_format == 'tex':
+            return 'pdf_to_tex'
         return 'pdf_to_md'  # Default
+    elif suffix in TEX_EXTENSIONS:
+        if target_format == 'docx':
+            return 'tex_to_docx'
+        return 'tex_to_md'  # Default
     else:
-        raise ValueError(f"Unsupported file type: {suffix}. Use .md, .markdown, .txt, .docx, or .pdf")
+        raise ValueError(f"Unsupported file type: {suffix}. Use .md, .markdown, .txt, .docx, .pdf, .tex, or .latex")
 
 
 def is_convertible_file(file_path: Path, include_txt: bool = True) -> bool:
@@ -88,7 +105,7 @@ def collect_files_from_folder(folder_path: Path, recursive: bool = False) -> Lis
     if recursive:
         for root, dirs, filenames in os.walk(folder_path):
             # Skip output directories we create
-            dirs[:] = [d for d in dirs if d not in ('MD', 'DOCX', 'PDF')]
+            dirs[:] = [d for d in dirs if d not in ('MD', 'DOCX', 'PDF', 'TEX')]
             for filename in filenames:
                 file_path = Path(root) / filename
                 if is_convertible_file(file_path, include_txt=False):
@@ -116,10 +133,15 @@ def get_converter_for_direction(direction: str, input_file: str, output_file: st
     converters = {
         'md_to_docx': MarkdownToDocxConverter,
         'md_to_pdf': MarkdownToPdfConverter,
+        'md_to_tex': MarkdownToTexConverter,
         'docx_to_md': DocxToMarkdownConverter,
         'docx_to_pdf': DocxToPdfConverter,
+        'docx_to_tex': DocxToTexConverter,
         'pdf_to_md': PdfToMarkdownConverter,
         'pdf_to_docx': PdfToDocxConverter,
+        'pdf_to_tex': PdfToTexConverter,
+        'tex_to_md': TexToMarkdownConverter,
+        'tex_to_docx': TexToDocxConverter,
     }
 
     converter_class = converters.get(direction)
@@ -173,16 +195,19 @@ def convert_folder(folder_path: Path, recursive: bool = False, verbose: bool = F
     md_output_dir = folder_path / 'MD'
     docx_output_dir = folder_path / 'DOCX'
     pdf_output_dir = folder_path / 'PDF'
+    tex_output_dir = folder_path / 'TEX'
 
     md_output_dir.mkdir(exist_ok=True)
     docx_output_dir.mkdir(exist_ok=True)
     pdf_output_dir.mkdir(exist_ok=True)
+    tex_output_dir.mkdir(exist_ok=True)
 
     if verbose:
         print(f"Created output directories:")
         print(f"  - {md_output_dir}")
         print(f"  - {docx_output_dir}")
         print(f"  - {pdf_output_dir}")
+        print(f"  - {tex_output_dir}")
 
     success_count = 0
     error_count = 0
@@ -192,11 +217,13 @@ def convert_folder(folder_path: Path, recursive: bool = False, verbose: bool = F
     md_files = [f for f in files if f.suffix.lower() in MARKDOWN_EXTENSIONS_FOLDER]
     docx_files = [f for f in files if f.suffix.lower() in DOCX_EXTENSIONS]
     pdf_files = [f for f in files if f.suffix.lower() in PDF_EXTENSIONS]
+    tex_files = [f for f in files if f.suffix.lower() in TEX_EXTENSIONS]
 
     print(f"\nFound {len(files)} convertible files:")
     print(f"  - {len(md_files)} Markdown files")
     print(f"  - {len(docx_files)} Word files")
     print(f"  - {len(pdf_files)} PDF files")
+    print(f"  - {len(tex_files)} LaTeX files")
     print()
 
     for i, file_path in enumerate(files, 1):
@@ -207,10 +234,15 @@ def convert_folder(folder_path: Path, recursive: bool = False, verbose: bool = F
             output_info = {
                 'md_to_docx': (docx_output_dir, '.docx', 'MD -> DOCX'),
                 'md_to_pdf': (pdf_output_dir, '.pdf', 'MD -> PDF'),
+                'md_to_tex': (tex_output_dir, '.tex', 'MD -> TEX'),
                 'docx_to_md': (md_output_dir, '.md', 'DOCX -> MD'),
                 'docx_to_pdf': (pdf_output_dir, '.pdf', 'DOCX -> PDF'),
+                'docx_to_tex': (tex_output_dir, '.tex', 'DOCX -> TEX'),
                 'pdf_to_md': (md_output_dir, '.md', 'PDF -> MD'),
                 'pdf_to_docx': (docx_output_dir, '.docx', 'PDF -> DOCX'),
+                'pdf_to_tex': (tex_output_dir, '.tex', 'PDF -> TEX'),
+                'tex_to_md': (md_output_dir, '.md', 'TEX -> MD'),
+                'tex_to_docx': (docx_output_dir, '.docx', 'TEX -> DOCX'),
             }
 
             output_dir, suffix, direction_str = output_info[direction]
@@ -247,13 +279,14 @@ def convert_folder(folder_path: Path, recursive: bool = False, verbose: bool = F
 def main():
     """Main entry point for the unified converter"""
     parser = argparse.ArgumentParser(
-        description='Convert between Markdown, Word, and PDF documents (auto-detects direction)',
+        description='Convert between Markdown, Word, PDF, and LaTeX documents (auto-detects direction)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Conversion Direction (default):
   .md, .markdown, .txt  ->  .docx  (Markdown to Word)
   .docx                 ->  .md    (Word to Markdown)
   .pdf                  ->  .md    (PDF to Markdown)
+  .tex, .latex          ->  .md    (LaTeX to Markdown)
 
 With --to-pdf flag:
   .md, .markdown, .txt  ->  .pdf   (Markdown to PDF)
@@ -261,6 +294,12 @@ With --to-pdf flag:
 
 With --to-docx flag:
   .pdf                  ->  .docx  (PDF to Word)
+  .tex, .latex          ->  .docx  (LaTeX to Word)
+
+With --to-tex flag:
+  .md, .markdown, .txt  ->  .tex   (Markdown to LaTeX)
+  .docx                 ->  .tex   (Word to LaTeX)
+  .pdf                  ->  .tex   (PDF to LaTeX)
 
 Folder Conversion:
   When a folder is provided, all convertible files are processed.
@@ -268,18 +307,24 @@ Folder Conversion:
     - MD/    contains converted .md files
     - DOCX/  contains converted .docx files
     - PDF/   contains converted .pdf files
+    - TEX/   contains converted .tex files
 
 Examples:
   %(prog)s document.md              # Creates document.docx
   %(prog)s document.docx            # Creates document.md
   %(prog)s document.pdf             # Creates document.md
+  %(prog)s document.tex             # Creates document.md
   %(prog)s document.md --to-pdf     # Creates document.pdf
+  %(prog)s document.md --to-tex     # Creates document.tex
   %(prog)s document.docx --to-pdf   # Creates document.pdf
+  %(prog)s document.docx --to-tex   # Creates document.tex
   %(prog)s document.pdf --to-docx   # Creates document.docx
+  %(prog)s document.pdf --to-tex    # Creates document.tex
+  %(prog)s document.tex --to-docx   # Creates document.docx
   %(prog)s report.md -o final.docx  # Specify output name
   %(prog)s *.md                     # Batch convert all markdown files
   %(prog)s ./my_folder              # Convert all files in folder
-  %(prog)s ./my_folder --to-pdf     # Convert folder to PDF
+  %(prog)s ./my_folder --to-tex     # Convert folder to LaTeX
   %(prog)s ./my_folder -r           # Convert folder recursively
         """
     )
@@ -326,6 +371,12 @@ Examples:
     )
 
     parser.add_argument(
+        '--to-tex',
+        action='store_true',
+        help='Force conversion to LaTeX'
+    )
+
+    parser.add_argument(
         '--overwrite',
         action='store_true',
         help='Overwrite existing output files (for folder conversion)'
@@ -342,9 +393,9 @@ Examples:
         sys.exit(1)
 
     # Check for conflicting format flags
-    format_flags = sum([args.to_docx, args.to_md, args.to_pdf])
+    format_flags = sum([args.to_docx, args.to_md, args.to_pdf, args.to_tex])
     if format_flags > 1:
-        print("Error: Cannot specify multiple output format flags (--to-docx, --to-md, --to-pdf)")
+        print("Error: Cannot specify multiple output format flags (--to-docx, --to-md, --to-pdf, --to-tex)")
         sys.exit(1)
 
     # Determine target format from flags
@@ -355,6 +406,8 @@ Examples:
         target_format = 'docx'
     elif args.to_md:
         target_format = 'md'
+    elif args.to_tex:
+        target_format = 'tex'
 
     total_success = 0
     total_errors = 0
@@ -398,10 +451,15 @@ Examples:
                 direction_strings = {
                     'md_to_docx': 'MD -> DOCX',
                     'md_to_pdf': 'MD -> PDF',
+                    'md_to_tex': 'MD -> TEX',
                     'docx_to_md': 'DOCX -> MD',
                     'docx_to_pdf': 'DOCX -> PDF',
+                    'docx_to_tex': 'DOCX -> TEX',
                     'pdf_to_md': 'PDF -> MD',
                     'pdf_to_docx': 'PDF -> DOCX',
+                    'pdf_to_tex': 'PDF -> TEX',
+                    'tex_to_md': 'TEX -> MD',
+                    'tex_to_docx': 'TEX -> DOCX',
                 }
                 direction_str = direction_strings.get(direction, direction)
 
