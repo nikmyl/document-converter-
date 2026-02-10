@@ -114,6 +114,9 @@ class PdfToMarkdownConverter:
 
     def _process_page(self, page, page_num: int):
         """Process a single PDF page"""
+        # Track starting position for hyperlink application
+        start_line_idx = len(self.markdown_lines)
+
         # Extract tables first (to know which regions to skip for text)
         tables = page.find_tables()
         table_bboxes = [table.bbox for table in tables]
@@ -124,11 +127,65 @@ class PdfToMarkdownConverter:
             if table_data:
                 self._add_table(table_data)
 
+        # Extract hyperlinks from page annotations
+        hyperlinks = self._extract_page_hyperlinks(page)
+
         # Extract text, avoiding table regions
         text_content = self._extract_text_avoiding_tables(page, table_bboxes)
 
         # Process text content
         self._process_text_content(text_content, page)
+
+        # Apply hyperlinks to the lines produced from this page
+        self._apply_hyperlinks(hyperlinks, start_line_idx)
+
+    def _extract_page_hyperlinks(self, page) -> List[Dict]:
+        """Extract hyperlinks and their display text from a PDF page"""
+        links = []
+        try:
+            page_hyperlinks = getattr(page, 'hyperlinks', None)
+            if not page_hyperlinks:
+                return links
+            for link in page_hyperlinks:
+                uri = link.get('uri', '')
+                if not uri:
+                    continue
+                # Extract display text from the link's bounding box
+                try:
+                    padding = 2
+                    bbox = (
+                        max(0, link['x0'] - padding),
+                        max(0, link['top'] - padding),
+                        link['x1'] + padding,
+                        link['bottom'] + padding,
+                    )
+                    cropped = page.crop(bbox)
+                    text = cropped.extract_text()
+                    if text and text.strip():
+                        links.append({
+                            'text': text.strip(),
+                            'url': uri,
+                        })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return links
+
+    def _apply_hyperlinks(self, hyperlinks: List[Dict], start_idx: int):
+        """Replace plain text with markdown hyperlinks in recently added lines"""
+        if not hyperlinks:
+            return
+        for link in hyperlinks:
+            text = link['text']
+            url = link['url']
+            md_link = f"[{text}]({url})"
+            # Search only in lines from the current page
+            for i in range(start_idx, len(self.markdown_lines)):
+                line = self.markdown_lines[i]
+                if text in line and f"[{text}](" not in line:
+                    self.markdown_lines[i] = line.replace(text, md_link, 1)
+                    break
 
     def _extract_text_avoiding_tables(self, page, table_bboxes: List[Tuple]) -> str:
         """Extract text from page while avoiding table regions"""

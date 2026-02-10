@@ -202,59 +202,73 @@ class DocxToMarkdownConverter:
         return 1
 
     def _get_formatted_text(self, paragraph: Paragraph) -> str:
-        """Get paragraph text with inline formatting"""
+        """Get paragraph text with inline formatting, including hyperlinks"""
         result = []
-
-        for run in paragraph.runs:
-            text = run.text
-            if not text:
-                continue
-
-            # Check for hyperlinks (handled separately)
-            # Apply formatting
-            if run.bold and run.italic:
-                text = f"***{text}***"
-            elif run.bold:
-                text = f"**{text}**"
-            elif run.italic:
-                text = f"*{text}*"
-
-            # Check for inline code (monospace font)
-            if run.font.name and 'courier' in run.font.name.lower():
-                text = f"`{run.text}`"
-
-            result.append(text)
-
-        # Handle hyperlinks
-        formatted = ''.join(result)
-        formatted = self._process_hyperlinks(paragraph, formatted)
-
-        return formatted
-
-    def _process_hyperlinks(self, paragraph: Paragraph, text: str) -> str:
-        """Extract and format hyperlinks from paragraph"""
-        # Get hyperlinks from the paragraph XML
         p_element = paragraph._element
-        hyperlinks = p_element.findall('.//w:hyperlink', self.NAMESPACES)
 
-        for hyperlink in hyperlinks:
-            # Get the relationship ID
-            r_id = hyperlink.get(qn('r:id'))
-            if r_id:
-                try:
-                    # Get the target URL from relationships
-                    rel = self.doc.part.rels.get(r_id)
-                    if rel and hasattr(rel, 'target_ref'):
-                        url = rel.target_ref
-                        # Get the hyperlink text
-                        link_text = ''.join([node.text or '' for node in hyperlink.iter() if node.text])
-                        if link_text and url:
-                            # Replace plain text with markdown link
-                            text = text.replace(link_text, f"[{link_text}]({url})", 1)
-                except Exception:
-                    pass
+        for child in p_element:
+            if child.tag == qn('w:r'):
+                # Direct run - process with formatting
+                text = self._format_run_element(child, paragraph)
+                if text:
+                    result.append(text)
+
+            elif child.tag == qn('w:hyperlink'):
+                # Hyperlink element - extract URL and display text
+                r_id = child.get(qn('r:id'))
+                url = None
+                if r_id:
+                    try:
+                        rel = self.doc.part.rels.get(r_id)
+                        if rel and hasattr(rel, 'target_ref'):
+                            url = rel.target_ref
+                    except Exception:
+                        pass
+
+                # Get text from runs inside the hyperlink
+                link_text_parts = []
+                for run_elem in child.findall(qn('w:r')):
+                    run_text = self._get_run_element_text(run_elem)
+                    if run_text:
+                        link_text_parts.append(run_text)
+
+                link_text = ''.join(link_text_parts)
+
+                if link_text and url:
+                    result.append(f"[{link_text}]({url})")
+                elif link_text:
+                    result.append(link_text)
+
+        return ''.join(result)
+
+    def _format_run_element(self, run_element, paragraph) -> str:
+        """Format a w:r element with markdown formatting"""
+        run = Run(run_element, paragraph)
+        text = run.text
+        if not text:
+            return ''
+
+        # Check for inline code (monospace font) first
+        if run.font.name and 'courier' in run.font.name.lower():
+            return f"`{text}`"
+
+        # Apply formatting
+        if run.bold and run.italic:
+            return f"***{text}***"
+        elif run.bold:
+            return f"**{text}**"
+        elif run.italic:
+            return f"*{text}*"
 
         return text
+
+    def _get_run_element_text(self, run_element) -> str:
+        """Extract plain text from a w:r XML element"""
+        text_parts = []
+        for t_elem in run_element.findall(qn('w:t')):
+            if t_elem.text:
+                text_parts.append(t_elem.text)
+        return ''.join(text_parts)
 
     def _is_code_block(self, paragraph: Paragraph) -> bool:
         """
@@ -308,8 +322,13 @@ class DocxToMarkdownConverter:
         for row in table.rows:
             row_cells = []
             for cell in row.cells:
-                # Get cell text, handling multiple paragraphs
-                cell_text = ' '.join(p.text.strip() for p in cell.paragraphs if p.text.strip())
+                # Get cell text with formatting and hyperlinks
+                parts = []
+                for p in cell.paragraphs:
+                    text = self._get_formatted_text(p).strip()
+                    if text:
+                        parts.append(text)
+                cell_text = ' '.join(parts)
                 # Escape pipe characters in cell content
                 cell_text = cell_text.replace('|', '\\|')
                 row_cells.append(cell_text)
